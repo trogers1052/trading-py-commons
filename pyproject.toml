@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trading-py-commons"
+version = "0.1.0"
+description = "Shared Python infrastructure (config, metrics, redis, telegram, daemon) for the trading platform's Python services."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "trogers1052" }]
+keywords = ["trading", "config", "pydantic", "redis", "telegram", "prometheus"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = [
+    "pydantic>=2.5",
+    "pydantic-settings>=2.1",
+    "redis>=5.0",
+    "httpx>=0.26",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+# prometheus_client is optional — the `metrics` module degrades to no-ops
+# when it is absent. Install it to expose real metrics.
+prometheus = ["prometheus-client>=0.19"]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "black>=24.0",
+    "mypy>=1.8",
+    "prometheus-client>=0.19",
+]
+
+[project.urls]
+Homepage = "https://github.com/trogers1052/trading-py-commons"
+Repository = "https://github.com/trogers1052/trading-py-commons"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+trading_commons = ["py.typed"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311", "py312"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+ignore_missing_imports = true
+check_untyped_defs = true
+files = ["src/trading_commons"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --cov=trading_commons --cov-report=term-missing"
+asyncio_mode = "auto"
