@@ -26,10 +26,9 @@ def test_redis_url_property():
     assert base.redis_url == "redis://:pw@h:6380/2"
 
 
-def test_client_raises_before_connect():
+def test_client_is_none_before_connect():
     base = RedisBase()
-    with pytest.raises(RuntimeError):
-        _ = base.client
+    assert base.client is None
 
 
 def test_connect_success(monkeypatch):
@@ -51,8 +50,7 @@ def test_connect_failure(monkeypatch):
     base = RedisBase()
     monkeypatch.setattr(base, "_create_client", boom)
     assert base.connect() is False
-    with pytest.raises(RuntimeError):
-        _ = base.client
+    assert base.client is None
 
 
 def test_with_retry_success_no_reconnect(monkeypatch):
@@ -154,3 +152,96 @@ def test_close_is_idempotent(monkeypatch):
     fake.close.assert_called_once()
     assert base._client is None
     base.close()  # second close must not raise
+
+
+# ---- v0.2.0 additions -----------------------------------------------------
+def test_client_is_none_after_close(monkeypatch):
+    base = RedisBase()
+    monkeypatch.setattr(base, "_create_client", lambda: MagicMock())
+    base.connect()
+    base.close()
+    assert base.client is None
+
+
+def test_max_retries_zero_calls_once_no_retry_no_sleep(monkeypatch):
+    base = RedisBase(max_retries=0)
+    fake = MagicMock()
+    monkeypatch.setattr(base, "_create_client", lambda: fake)
+    base.connect()
+
+    reconnect_spy = MagicMock(return_value=True)
+    monkeypatch.setattr(base, "reconnect", reconnect_spy)
+
+    sleeps = []
+    monkeypatch.setattr("trading_commons.redisx.time.sleep", lambda s: sleeps.append(s))
+
+    calls = {"n": 0}
+
+    def always_fail():
+        calls["n"] += 1
+        raise redis.ConnectionError("dropped")
+
+    with pytest.raises(redis.ConnectionError):
+        base._with_retry(always_fail)
+
+    assert calls["n"] == 1  # called exactly once
+    reconnect_spy.assert_not_called()  # no reconnect
+    assert sleeps == []  # no sleep
+
+
+def test_retry_on_timeout_defaults_false(monkeypatch):
+    captured = {}
+
+    def factory(**kwargs):
+        captured.update(kwargs)
+        return MagicMock()
+
+    base = RedisBase(client_factory=factory)
+    base._create_client()
+    assert captured["retry_on_timeout"] is False
+
+
+def test_retry_on_timeout_can_be_enabled(monkeypatch):
+    captured = {}
+
+    def factory(**kwargs):
+        captured.update(kwargs)
+        return MagicMock()
+
+    base = RedisBase(client_factory=factory, retry_on_timeout=True)
+    base._create_client()
+    assert captured["retry_on_timeout"] is True
+
+
+def test_client_factory_is_used():
+    sentinel = MagicMock(name="injected_client")
+
+    def factory(**kwargs):
+        return sentinel
+
+    base = RedisBase(client_factory=factory)
+    assert base._create_client() is sentinel
+
+
+def test_empty_password_normalised_to_none():
+    captured = {}
+
+    def factory(**kwargs):
+        captured.update(kwargs)
+        return MagicMock()
+
+    base = RedisBase(password="", client_factory=factory)
+    base._create_client()
+    assert captured["password"] is None
+
+
+def test_password_passed_through_when_set():
+    captured = {}
+
+    def factory(**kwargs):
+        captured.update(kwargs)
+        return MagicMock()
+
+    base = RedisBase(password="pw", client_factory=factory)
+    base._create_client()
+    assert captured["password"] == "pw"

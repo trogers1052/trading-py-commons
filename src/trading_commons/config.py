@@ -147,11 +147,20 @@ class BaseServiceSettings(BaseSettings):
         3. Field defaults
 
         How it works: the YAML file is read into a dict and passed as
-        constructor kwargs, which seeds the values. Then, for every field
-        that has a matching environment variable present, that env var is
-        applied *on top* of the YAML value — so the environment always
-        wins. This corrects the common bug where YAML values silently
+        constructor kwargs, which seeds the values. Then, for every key
+        that has a matching environment variable present, that YAML value
+        is dropped *so the env source wins* — the environment always takes
+        precedence. This corrects the common bug where YAML values silently
         shadow env vars (the precedence bug noted in CLAUDE.md §6).
+
+        **Nested sections** are handled too: when a field is a nested
+        pydantic sub-model (e.g. a ``position_sizing`` block), a YAML value
+        nested under it is dropped when the corresponding *nested* env var
+        is set. The nested env var name is built from ``env_prefix`` plus
+        the field path joined by ``env_nested_delimiter`` (default ``__``),
+        upper-cased — e.g. ``RISK_POSITION_SIZING__RISK_PER_TRADE_PCT``.
+        Recursion is arbitrary-depth, so deeply nested blocks work too.
+        Flat top-level behaviour is unchanged.
 
         A missing YAML file is fine — settings load from env + defaults.
         """
@@ -163,13 +172,56 @@ class BaseServiceSettings(BaseSettings):
             if not isinstance(config_dict, dict):
                 raise ValueError(f"YAML config at {path} must be a mapping")
 
-        # Drop any YAML key that has a corresponding env var set, so that
-        # pydantic-settings' env source (which outranks constructor kwargs)
-        # is the value that takes effect — env wins over YAML.
         env_prefix = cls.model_config.get("env_prefix", "") or ""
-        for field_name in list(config_dict):
-            env_key = f"{env_prefix}{field_name}".upper()
-            if env_key in os.environ:
-                del config_dict[field_name]
+        delimiter = cls.model_config.get("env_nested_delimiter") or "__"
+        cls._drop_env_shadowed(config_dict, cls, env_prefix, delimiter, ())
 
         return cls(**config_dict)
+
+    @staticmethod
+    def _nested_model_for(model: Any, field_name: str) -> Any | None:
+        """Return the nested ``BaseModel`` subclass for ``field_name``, if any.
+
+        Looks at the field's declared annotation on ``model`` and returns the
+        annotated type when it is a pydantic ``BaseModel`` subclass (the marker
+        of a nested settings section). Returns ``None`` for plain scalar fields
+        or unknown field names.
+        """
+        from pydantic import BaseModel
+
+        fields = getattr(model, "model_fields", None)
+        if not fields or field_name not in fields:
+            return None
+        annotation = fields[field_name].annotation
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            return annotation
+        return None
+
+    @classmethod
+    def _drop_env_shadowed(
+        cls,
+        config_dict: dict[str, Any],
+        model: Any,
+        env_prefix: str,
+        delimiter: str,
+        path: tuple[str, ...],
+    ) -> None:
+        """Recursively drop YAML keys shadowed by a matching env var.
+
+        For each key in ``config_dict``: build the env var name from
+        ``env_prefix`` + the field path joined by ``delimiter`` (upper-cased).
+        If that env var is set, the key is removed so pydantic-settings' env
+        source wins. If the key maps to a nested pydantic sub-model and its
+        value is a mapping, recurse into it (the parent key is kept so its
+        non-shadowed siblings still apply).
+        """
+        for field_name in list(config_dict):
+            full_path = (*path, field_name)
+            env_key = (env_prefix + delimiter.join(full_path)).upper()
+            if env_key in os.environ:
+                del config_dict[field_name]
+                continue
+            nested_model = cls._nested_model_for(model, field_name)
+            value = config_dict[field_name]
+            if nested_model is not None and isinstance(value, dict):
+                cls._drop_env_shadowed(value, nested_model, env_prefix, delimiter, full_path)

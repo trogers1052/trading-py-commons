@@ -60,12 +60,22 @@ class RedisBase:
         Socket timeouts in seconds (default 5).
     max_retries:
         Number of reconnect attempts ``_with_retry`` makes on a transient
-        failure before giving up (default 3).
+        failure before giving up (default 3). ``0`` means *call once, no
+        retry, no sleep*.
     backoff_base:
         Base seconds for exponential backoff between reconnect attempts;
         attempt *n* waits ``backoff_base * 2**(n-1)`` (default 0.5).
     decode_responses:
         Passed through to ``redis.Redis`` (default True).
+    retry_on_timeout:
+        Passed through to ``redis.Redis`` (default False). Set ``True`` to
+        let redis-py retry on socket timeouts.
+    client_factory:
+        Optional callable used to build the underlying client instead of
+        ``redis.Redis(...)``. A clean injection/test seam — provide it to
+        supply a custom or mock client without overriding ``_create_client``.
+        It is called with the same keyword arguments ``_create_client``
+        would pass to ``redis.Redis``.
     """
 
     def __init__(
@@ -80,6 +90,8 @@ class RedisBase:
         max_retries: int = 3,
         backoff_base: float = 0.5,
         decode_responses: bool = True,
+        retry_on_timeout: bool = False,
+        client_factory: Callable[..., redis.Redis] | None = None,
     ) -> None:
         self.host = host
         self.port = port
@@ -90,6 +102,8 @@ class RedisBase:
         self.max_retries = max_retries
         self.backoff_base = backoff_base
         self.decode_responses = decode_responses
+        self.retry_on_timeout = retry_on_timeout
+        self.client_factory = client_factory
         self._client: redis.Redis | None = None
 
     @property
@@ -98,24 +112,35 @@ class RedisBase:
         return redis_url(self.host, self.port, self.db, self.password)
 
     @property
-    def client(self) -> redis.Redis:
-        """Return the live client, raising if not connected."""
-        if self._client is None:
-            raise RuntimeError(f"{self.__class__.__name__} is not connected — call connect() first")
+    def client(self) -> redis.Redis | None:
+        """Return the underlying client, or ``None`` when disconnected.
+
+        Returns ``self._client`` directly (which is ``None`` before
+        :meth:`connect` or after :meth:`close`). Callers may treat a
+        disconnected store as falsy rather than guarding against an
+        exception.
+        """
         return self._client
 
     def _create_client(self) -> redis.Redis:
-        """Create a new configured Redis client instance."""
-        return redis.Redis(
+        """Create a new configured Redis client instance.
+
+        Uses ``client_factory`` when one was supplied, else ``redis.Redis``.
+        An empty-string password is normalised to ``None``.
+        """
+        kwargs: dict[str, Any] = dict(
             host=self.host,
             port=self.port,
             db=self.db,
-            password=self.password,
+            password=self.password or None,
             decode_responses=self.decode_responses,
             socket_timeout=self.socket_timeout,
             socket_connect_timeout=self.socket_connect_timeout,
-            retry_on_timeout=True,
+            retry_on_timeout=self.retry_on_timeout,
         )
+        if self.client_factory is not None:
+            return self.client_factory(**kwargs)
+        return redis.Redis(**kwargs)
 
     def connect(self) -> bool:
         """Create the client and verify the connection with PING.
@@ -166,10 +191,16 @@ class RedisBase:
         On a transient connection error, reconnects (up to ``max_retries``
         times with exponential backoff) and retries the operation. Re-raises
         the last error if all attempts are exhausted.
+
+        When ``max_retries == 0`` the operation is called exactly once: any
+        transient error propagates immediately with no reconnect and no
+        sleep.
         """
         try:
             return func(*args, **kwargs)
         except _RETRYABLE as exc:
+            if self.max_retries <= 0:
+                raise
             last_exc: BaseException = exc
             logger.warning(
                 "%s Redis op failed: %s — will reconnect and retry",

@@ -28,6 +28,40 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_PORT = 9090
 
+
+class NoOpMetric:
+    """No-op metric that silently absorbs any call. Zero-cost.
+
+    Mirrors the surface of prometheus_client's metric objects so callsites
+    can call ``.inc()`` / ``.dec()`` / ``.set()`` / ``.observe()`` /
+    ``.set_to_current_time()`` / ``.labels(...)`` unconditionally — whether
+    or not prometheus_client is installed. ``.labels(...)`` chains by
+    returning ``self``.
+    """
+
+    def inc(self, amount: float = 1) -> None:
+        pass
+
+    def dec(self, amount: float = 1) -> None:
+        pass
+
+    def set(self, value: float) -> None:
+        pass
+
+    def observe(self, value: float) -> None:
+        pass
+
+    def set_to_current_time(self) -> None:
+        pass
+
+    def labels(self, *args: object, **kwargs: object) -> NoOpMetric:
+        return self
+
+
+# Backwards-compatible private alias (the class was named ``_NoOpMetric``
+# in v0.1.0's import-error branch).
+_NoOpMetric = NoOpMetric
+
 try:
     from prometheus_client import (
         Counter,
@@ -40,29 +74,11 @@ try:
 except ImportError:  # pragma: no cover - exercised via test monkeypatch
     HAS_PROMETHEUS = False
 
-    class _NoOpMetric:
-        """No-op metric that silently absorbs any call. Zero-cost."""
-
-        def inc(self, amount: float = 1) -> None:
-            pass
-
-        def dec(self, amount: float = 1) -> None:
-            pass
-
-        def set(self, value: float) -> None:
-            pass
-
-        def observe(self, value: float) -> None:
-            pass
-
-        def labels(self, *args: object, **kwargs: object) -> _NoOpMetric:
-            return self
-
     class _NoOpFactory:
-        """Creates _NoOpMetric instances, accepting prometheus_client's args."""
+        """Creates NoOpMetric instances, accepting prometheus_client's args."""
 
-        def __call__(self, *args: object, **kwargs: object) -> _NoOpMetric:
-            return _NoOpMetric()
+        def __call__(self, *args: object, **kwargs: object) -> NoOpMetric:
+            return NoOpMetric()
 
     Counter = _NoOpFactory()  # type: ignore[assignment,misc]
     Gauge = _NoOpFactory()  # type: ignore[assignment,misc]
@@ -70,6 +86,10 @@ except ImportError:  # pragma: no cover - exercised via test monkeypatch
 
     def start_http_server(port: int, *args: object, **kwargs: object) -> None:  # type: ignore[misc]
         pass
+
+
+# Alias requested by consumers that referenced ``_HAS_PROMETHEUS``.
+_HAS_PROMETHEUS = HAS_PROMETHEUS
 
 
 def start_metrics_server(port: int | None = None) -> bool:
@@ -102,4 +122,6 @@ __all__ = [
     "start_http_server",
     "start_metrics_server",
     "HAS_PROMETHEUS",
+    "_HAS_PROMETHEUS",
+    "NoOpMetric",
 ]

@@ -96,3 +96,39 @@ def test_absent_start_server_returns_false(metrics_absent):
 def test_absent_start_http_server_is_noop(metrics_absent):
     # The shimmed start_http_server must accept a port and do nothing.
     assert metrics_absent.start_http_server(9090) is None
+
+
+# ---- v0.2.0 additions -----------------------------------------------------
+def test_noop_metric_class_is_exported():
+    import trading_commons.metrics as m
+
+    assert hasattr(m, "NoOpMetric")
+    metric = m.NoOpMetric()
+    # Full surface, all chainable / no-op.
+    metric.inc()
+    metric.inc(2)
+    metric.dec()
+    metric.dec(2)
+    metric.set(1.0)
+    metric.observe(0.5)
+    metric.set_to_current_time()
+    assert metric.labels(x="v") is metric
+    metric.labels(x="v").inc()
+    metric.labels(x="v").set_to_current_time()
+
+
+def test_has_prometheus_private_alias_matches():
+    import trading_commons.metrics as m
+
+    assert m._HAS_PROMETHEUS == m.HAS_PROMETHEUS
+
+
+def test_absent_noop_supports_set_to_current_time(metrics_absent):
+    gauge = metrics_absent.Gauge("ignored", "desc")
+    gauge.set_to_current_time()  # must not raise
+    gauge.labels(x="v").set_to_current_time()
+    assert metrics_absent._HAS_PROMETHEUS is False
+
+
+def test_present_alias_true(metrics_present):
+    assert metrics_present._HAS_PROMETHEUS is True
