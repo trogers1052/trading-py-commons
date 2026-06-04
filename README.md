@@ -13,13 +13,13 @@ Telegram client, and a daemon run loop — into one tested, documented library.
 - **Python:** ≥ 3.11
 
 ```bash
-pip install "trading-py-commons @ git+https://github.com/trogers1052/trading-py-commons.git@v0.2.0"
+pip install "trading-py-commons @ git+https://github.com/trogers1052/trading-py-commons.git@v0.2.1"
 ```
 
 To also pull in real Prometheus metrics (otherwise `metrics` runs as no-ops):
 
 ```bash
-pip install "trading-py-commons[prometheus] @ git+https://github.com/trogers1052/trading-py-commons.git@v0.2.0"
+pip install "trading-py-commons[prometheus] @ git+https://github.com/trogers1052/trading-py-commons.git@v0.2.1"
 ```
 
 > **v0.2.0** closes the gaps consumers worked around in v0.1.0: nested-section
@@ -184,12 +184,15 @@ print(redis_url("cache", 6380, 1, "pw"))  # redis://:pw@cache:6380/1
 RedisBase(
     host="localhost", port=6379, db=0, password=None, *,
     socket_timeout=5.0, socket_connect_timeout=5.0,
-    max_retries=3, backoff_base=0.5, decode_responses=True,
+    max_retries=3, backoff_base=0.5,
+    decode_responses=True,                        # passed through to redis.Redis
     retry_on_timeout=False,                       # was hardcoded True in v0.1.0
     client_factory=None,                          # Callable[..., redis.Redis] | None
 )
 ```
 
+- **`decode_responses=True`** by default (passed through to `redis.Redis`); set
+  it `False` to receive raw `bytes` from Redis instead of decoded `str`.
 - **`retry_on_timeout=False`** by default (passed through to `redis.Redis`); set
   it `True` to opt in. No more overriding `_create_client` just to flip it.
 - **`client_factory`** — inject a custom/mock client builder; it receives the
@@ -258,7 +261,7 @@ python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest          # tests + coverage (≥ 80%)
+pytest          # tests + coverage (gated ≥ 90%)
 ruff check .    # lint
 black --check . # format check
 mypy            # type check
@@ -267,6 +270,20 @@ mypy            # type check
 CI (`.github/workflows/ci.yml`) runs ruff, black, mypy, and pytest on Python
 3.11 and 3.12 for every push and PR to `main`. This is a library — no Docker
 image is built.
+
+---
+
+## Versions
+
+- **v0.2.1** — `from_yaml` nested-`Optional` fix (env > YAML precedence now
+  recurses into `Optional[SubModel]` / `SubModel | None` nested sections), an
+  explicit `from_yaml` return type, added tests (default `redis.Redis(**kwargs)`
+  construction path and `decode_responses` passthrough), README
+  `decode_responses` documented in the `RedisBase` constructor block, and a
+  `--cov-fail-under=90` coverage gate.
+- **v0.2.0** — closed the v0.1.0 consumer-workaround gaps: nested-section
+  `from_yaml` precedence, an unforced `RedisBase`, a complete no-op `metrics`
+  surface, and lazy submodule imports. All backward compatible.
 
 ---
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trading-py-commons"
-version = "0.2.0"
+version = "0.2.1"
 description = "Shared Python infrastructure (config, metrics, redis, telegram, daemon) for the trading platform's Python services."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -76,5 +76,5 @@ files = ["src/trading_commons"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra --cov=trading_commons --cov-report=term-missing"
+addopts = "-ra --cov=trading_commons --cov-report=term-missing --cov-fail-under=90"
 asyncio_mode = "auto"

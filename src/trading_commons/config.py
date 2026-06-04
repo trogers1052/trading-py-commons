@@ -26,11 +26,13 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, TypeVar, get_args, get_origin
 
 import yaml
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_T = TypeVar("_T", bound="BaseServiceSettings")
 
 # Directory Docker mounts secrets into. Overridable for tests.
 SECRETS_DIR = Path("/run/secrets")
@@ -137,7 +139,7 @@ class BaseServiceSettings(BaseSettings):
 
     # ---- env > YAML > defaults precedence --------------------------------
     @classmethod
-    def from_yaml(cls, yaml_path: str | os.PathLike[str]):
+    def from_yaml(cls: type[_T], yaml_path: str | os.PathLike[str]) -> _T:
         """Load settings with **env > YAML > defaults** precedence.
 
         Precedence (highest first):
@@ -160,7 +162,9 @@ class BaseServiceSettings(BaseSettings):
         the field path joined by ``env_nested_delimiter`` (default ``__``),
         upper-cased — e.g. ``RISK_POSITION_SIZING__RISK_PER_TRADE_PCT``.
         Recursion is arbitrary-depth, so deeply nested blocks work too.
-        Flat top-level behaviour is unchanged.
+        ``Optional``/``Union`` nested sub-models (e.g. ``SubModel | None``)
+        are recognised as well, so env-shadowing recurses into optional
+        nested blocks. Flat top-level behaviour is unchanged.
 
         A missing YAML file is fine — settings load from env + defaults.
         """
@@ -184,8 +188,10 @@ class BaseServiceSettings(BaseSettings):
 
         Looks at the field's declared annotation on ``model`` and returns the
         annotated type when it is a pydantic ``BaseModel`` subclass (the marker
-        of a nested settings section). Returns ``None`` for plain scalar fields
-        or unknown field names.
+        of a nested settings section). ``Optional``/``Union`` annotations
+        (e.g. ``SubModel | None``) are unwrapped, so an optional nested
+        sub-model is still recognised and env-shadowing recurses into it.
+        Returns ``None`` for plain scalar fields or unknown field names.
         """
         from pydantic import BaseModel
 
@@ -195,6 +201,12 @@ class BaseServiceSettings(BaseSettings):
         annotation = fields[field_name].annotation
         if isinstance(annotation, type) and issubclass(annotation, BaseModel):
             return annotation
+        # Unwrap Optional[SubModel] / Union[SubModel, ...] and find the
+        # contained BaseModel subclass, if any.
+        if get_origin(annotation) is not None:
+            for arg in get_args(annotation):
+                if isinstance(arg, type) and issubclass(arg, BaseModel):
+                    return arg
         return None
 
     @classmethod

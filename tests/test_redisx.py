@@ -245,3 +245,47 @@ def test_password_passed_through_when_set():
     base = RedisBase(password="pw", client_factory=factory)
     base._create_client()
     assert captured["password"] == "pw"
+
+
+# ---- v0.2.1 additions -----------------------------------------------------
+def test_default_redis_redis_construction_path(monkeypatch):
+    # No client_factory injected → the default redis.Redis(**kwargs) branch
+    # is exercised. Patch the Redis symbol the module imported.
+    captured = {}
+    sentinel = MagicMock(name="redis_client")
+
+    def fake_redis(**kwargs):
+        captured.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr("trading_commons.redisx.redis.Redis", fake_redis)
+
+    base = RedisBase(host="h", port=6380, db=2, password="pw")
+    client = base._create_client()
+
+    assert client is sentinel
+    assert captured["host"] == "h"
+    assert captured["port"] == 6380
+    assert captured["db"] == 2
+    assert captured["password"] == "pw"
+    assert captured["decode_responses"] is True
+    assert captured["socket_timeout"] == 5.0
+    assert captured["socket_connect_timeout"] == 5.0
+    assert captured["retry_on_timeout"] is False
+
+
+def test_decode_responses_passthrough_default_and_override():
+    captured = {}
+
+    def factory(**kwargs):
+        captured.update(kwargs)
+        return MagicMock()
+
+    # default
+    RedisBase(client_factory=factory)._create_client()
+    assert captured["decode_responses"] is True
+
+    # override
+    captured.clear()
+    RedisBase(client_factory=factory, decode_responses=False)._create_client()
+    assert captured["decode_responses"] is False

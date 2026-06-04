@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import importlib
-from typing import ClassVar
+from typing import ClassVar, Optional
 
 import pytest
 from pydantic import BaseModel
@@ -36,6 +36,10 @@ class DeepMiddle(BaseModel):
     inner: DeepInner = DeepInner()
 
 
+class OptionalBlock(BaseModel):
+    threshold: float = 1.5
+
+
 class RiskSettings(BaseServiceSettings):
     model_config = SettingsConfigDict(
         env_prefix="RISK_",
@@ -46,6 +50,10 @@ class RiskSettings(BaseServiceSettings):
     position_sizing: PositionSizing = PositionSizing()
     limits: Limits = Limits()
     middle: DeepMiddle = DeepMiddle()
+    # Optional nested sub-model (Union / SubModel | None) — env-shadowing must
+    # still recurse into it (the v0.2.1 fix). UP045 ignored on purpose: the
+    # point of this fixture is to exercise the literal Optional[...] form.
+    optional_block: Optional[OptionalBlock] = OptionalBlock()  # noqa: UP045
 
 
 @pytest.fixture(autouse=True)
@@ -230,6 +238,26 @@ def test_flat_field_on_nested_settings_still_env_beats_yaml(tmp_path, monkeypatc
     monkeypatch.setenv("RISK_REDIS_HOST", "envhost")
     s = RiskSettings.from_yaml(yaml_file)
     assert s.redis_host == "envhost"
+
+
+def test_optional_nested_env_beats_nested_yaml(tmp_path, monkeypatch):
+    # The v0.2.1 fix: an Optional[SubModel] (SubModel | None) nested field must
+    # still have its nested YAML value shadowed by a matching nested env var.
+    yaml_file = tmp_path / "risk.yaml"
+    yaml_file.write_text("optional_block:\n  threshold: 9.9\n")
+    monkeypatch.setenv("RISK_OPTIONAL_BLOCK__THRESHOLD", "0.25")
+    s = RiskSettings.from_yaml(yaml_file)
+    # env wins over the nested YAML value inside the optional block
+    assert s.optional_block is not None
+    assert s.optional_block.threshold == 0.25
+
+
+def test_optional_nested_yaml_applies_without_env(tmp_path):
+    yaml_file = tmp_path / "risk.yaml"
+    yaml_file.write_text("optional_block:\n  threshold: 9.9\n")
+    s = RiskSettings.from_yaml(yaml_file)
+    assert s.optional_block is not None
+    assert s.optional_block.threshold == 9.9
 
 
 def test_undeclared_yaml_key_is_ignored_not_treated_as_nested(tmp_path):

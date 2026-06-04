@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 import httpx
 
@@ -108,8 +109,6 @@ class TelegramClient:
                     exc,
                 )
             if attempt < self.max_retries:
-                import time
-
                 time.sleep(self._backoff(attempt))
 
         logger.error("All %d Telegram send attempts failed: %s", self.max_retries, last_error)
