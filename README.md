@@ -47,8 +47,8 @@ from trading_commons import RedisBase   # needs only redis
 So `import trading_commons.telegram` no longer drags in `config`'s
 pydantic-settings / PyYAML, and `redisx`'s `redis`. The top-level names
 (`BaseServiceSettings`, `read_secret`, `RedisBase`, `redis_url`,
-`TelegramClient`, `run_daemon`) and the submodules themselves remain importable
-exactly as before.
+`TelegramClient`, `run_daemon`, `Clock`, `SystemClock`, `ManualClock`) and the
+submodules themselves remain importable exactly as before.
 
 ## Modules
 
@@ -251,6 +251,52 @@ def teardown():
 
 run_daemon(setup, loop_once, teardown, interval=300, http_port=9099)
 ```
+
+---
+
+### `clock` — `Clock` / `SystemClock` / `ReplayClock`
+
+The time source a service reads "now" from. Calling `datetime.now()` directly
+makes a service impossible to replay: every relative-duration gate in the
+platform (signal debounce, context staleness, earnings staleness, cache TTLs)
+compares *now* against a stored instant, so driving historical data past a wall
+clock makes those gates behave in ways that never happen in production.
+
+```python
+from trading_commons.clock import from_env
+
+clock = from_env(redis_client)   # SystemClock unless CLOCK_MODE=replay
+
+if (clock.now() - last_publish).total_seconds() < debounce:
+    return  # suppressed
+```
+
+**The default is always the real clock.** Replay is opt-in via
+`CLOCK_MODE=replay`, and any other value — including a typo like `raplay` —
+resolves to real time, so a production service can never be put onto a
+simulated clock by accident.
+
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `CLOCK_MODE` | `real` | `replay` reads simulated time; anything else is real |
+| `CLOCK_SIM_KEY` | `sim:clock` | Redis key holding an ISO-8601 simulated time |
+
+For tests, `ManualClock` gives a clock you move with `set()` / `advance()`
+instead of sleeping:
+
+```python
+from trading_commons.clock import ManualClock
+
+clock = ManualClock(datetime(2021, 3, 1, tzinfo=UTC))
+clock.advance(hours=2)
+```
+
+**`ReplayClock` never falls back to wall-clock time.** A silent fallback would
+stamp today's date onto a replay of 2021 and corrupt the run invisibly — the
+worst failure mode, because the output still looks plausible. It must be primed
+(`from_env` does this, and raises `ClockError` if simulated time is
+unreadable), and if the source later fails it holds the last-known-good instant
+and logs, so a broken replay stalls visibly. `.degraded` exposes that state.
 
 ---
 

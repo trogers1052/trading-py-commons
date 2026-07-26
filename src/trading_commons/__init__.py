@@ -2,6 +2,8 @@
 
 Modules
 -------
+- ``clock``    : the time source a service reads "now" from — real by default,
+                 simulated under ``CLOCK_MODE=replay`` for whole-system replays.
 - ``config``   : ``BaseServiceSettings`` pydantic-settings base with Docker-secrets
                  support and an env > YAML > defaults precedence helper (nested-aware).
 - ``metrics``  : Prometheus client re-export with a transparent no-op fallback.
@@ -36,10 +38,13 @@ _LAZY_EXPORTS: dict[str, str] = {
     "redis_url": "redisx",
     "TelegramClient": "telegram",
     "run_daemon": "daemon",
+    "Clock": "clock",
+    "SystemClock": "clock",
+    "ManualClock": "clock",
 }
 
 # Submodules importable via attribute access (e.g. ``trading_commons.config``).
-_SUBMODULES = ("config", "metrics", "redisx", "telegram", "daemon")
+_SUBMODULES = ("config", "metrics", "redisx", "telegram", "daemon", "clock")
 
 __all__ = [
     *_LAZY_EXPORTS.keys(),
@@ -67,6 +72,9 @@ def __dir__() -> list[str]:
 
 
 if TYPE_CHECKING:  # pragma: no cover - import-time aid for type checkers only
+    from .clock import Clock as Clock
+    from .clock import ManualClock as ManualClock
+    from .clock import SystemClock as SystemClock
     from .config import BaseServiceSettings as BaseServiceSettings
     from .config import read_secret as read_secret
     from .daemon import run_daemon as run_daemon
