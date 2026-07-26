@@ -13,13 +13,13 @@ Telegram client, and a daemon run loop — into one tested, documented library.
 - **Python:** ≥ 3.11
 
 ```bash
-pip install "trading-py-commons @ git+https://github.com/trogers1052/trading-py-commons.git@v0.2.1"
+pip install "trading-py-commons @ git+https://github.com/trogers1052/trading-py-commons.git@v0.3.0"
 ```
 
 To also pull in real Prometheus metrics (otherwise `metrics` runs as no-ops):
 
 ```bash
-pip install "trading-py-commons[prometheus] @ git+https://github.com/trogers1052/trading-py-commons.git@v0.2.1"
+pip install "trading-py-commons[prometheus] @ git+https://github.com/trogers1052/trading-py-commons.git@v0.3.0"
 ```
 
 > **v0.2.0** closes the gaps consumers worked around in v0.1.0: nested-section
@@ -321,6 +321,10 @@ image is built.
 
 ## Versions
 
+- **v0.3.0** — adds the `clock` module: the time source a service reads "now"
+  from, real by default and simulated under `CLOCK_MODE=replay`, so the
+  e2e-replay harness can drive whole-system replays of historical data.
+  Backward compatible — nothing changes unless a service opts in.
 - **v0.2.1** — `from_yaml` nested-`Optional` fix (env > YAML precedence now
   recurses into `Optional[SubModel]` / `SubModel | None` nested sections), an
   explicit `from_yaml` return type, added tests (default `redis.Redis(**kwargs)`

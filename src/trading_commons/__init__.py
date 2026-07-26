@@ -28,7 +28,7 @@ from __future__ import annotations
 import importlib
 from typing import TYPE_CHECKING, Any
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 # Map each lazily-exported top-level name to the submodule that defines it.
 _LAZY_EXPORTS: dict[str, str] = {

@@ -133,7 +133,20 @@ def test_dir_lists_exports():
     assert "__version__" in names
 
 
-def test_version_is_020():
+def test_version_matches_pyproject():
+    """``__version__`` must track the packaged version.
+
+    Asserted against pyproject rather than a hardcoded literal: the previous
+    version of this test pinned "0.2.0" and kept passing after pyproject moved
+    to 0.2.1, so the two silently drifted apart and a release reported the
+    wrong version.
+    """
+    import tomllib
+    from pathlib import Path
+
     import trading_commons
 
-    assert trading_commons.__version__ == "0.2.0"
+    pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    packaged = tomllib.loads(pyproject.read_text())["project"]["version"]
+
+    assert trading_commons.__version__ == packaged
